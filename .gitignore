@@ -1,0 +1,22 @@
+# Node modules
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Build
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+*.env
+client/.env
+client/.env.*
+server/.env
+server/.env.*
+
+# IDE, hệ thống
+.vscode/
+.idea/
+.DS_Store

@@ -16,14 +16,14 @@ import blogRoutes from "./modules/blog/blog.routes.js";
 import searchRoutes from "./modules/search/search.routes.js";
 const app = express();
 
-// const limiter = ratelimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 100,
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   message:
-//     "Quá nhiều yêu cầu đến từ địa chỉ IP này, vui lòng thử lại sau 15 phút",
-// });
+const limiter = ratelimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message:
+    "Quá nhiều yêu cầu đến từ địa chỉ IP này, vui lòng thử lại sau 15 phút",
+});
 
 const allowedOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
@@ -47,7 +47,7 @@ app.use(
 
 app.use(express.json());
 
-// app.use(limiter);
+app.use(limiter);
 
 app.use("/api/invoices", invoiceRoutes);
 

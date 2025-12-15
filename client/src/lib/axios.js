@@ -10,8 +10,8 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Debugging API requests/responses
 if (typeof window !== "undefined") window.__API_DEBUG__ = true;
+
 api.interceptors.response.use(
   (res) => {
     if (window.__API_DEBUG__) console.log("[API OK]", res.config.url, res.data);
@@ -24,7 +24,7 @@ api.interceptors.response.use(
         err.config?.url,
         err.response?.status,
         err.response?.data
-      );``
+      );
     }
     return Promise.reject(err);
   }

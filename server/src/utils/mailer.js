@@ -11,6 +11,11 @@ export const transporter = nodemailer.createTransport({
 });
 
 export async function sendMail({ to, subject, html, attachments = [] }) {
+  if (process.env.NODE_ENV === "production") {
+    console.warn("sendMail skipped in production environment");
+    return null;
+  }
+
   const info = await transporter.sendMail({
     from: process.env.MAIL_FROM || process.env.SMTP_USER,
     to,

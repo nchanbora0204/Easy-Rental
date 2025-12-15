@@ -1,30 +1,42 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function LoginForm({ onSuccess }) {
   const { login } = useAuth();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  
+  const getErrMsg = (e) =>
+    e?.response?.data?.message || e?.message || "Đăng nhập thất bại";
+  const submit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (loading) return;
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr("");
-    setLoading(true);
-    try {
-      await login(email, password);
-      onSuccess?.();
-    } catch (e) {
-      setErr(e?.message || "Đăng nhập thất bại");
-    } finally {
-      setLoading(false);
-    }
-  };
+      setErr("");
+      setLoading(true);
+      try {
+        await login(email, password);
+        onSuccess?.();
+      } catch (e) {
+        setErr(getErrMsg(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [login, email, password, onSuccess, loading]
+  );
+
+  const toggleShowPassword = useCallback(() => {
+    setShowPassword((v) => !v);
+  }, []);
 
   return (
-    <div className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       {err && (
         <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded">
           <p className="text-sm">{err}</p>
@@ -41,6 +53,8 @@ export default function LoginForm({ onSuccess }) {
           placeholder="your@email.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
         />
       </div>
 
@@ -55,11 +69,14 @@ export default function LoginForm({ onSuccess }) {
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
           />
           <button
             type="button"
-            onClick={() => setShowPassword(!showPassword)}
+            onClick={toggleShowPassword}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
           >
             {showPassword ? (
               <svg
@@ -101,12 +118,12 @@ export default function LoginForm({ onSuccess }) {
       </div>
 
       <button
-        onClick={submit}
+        type="submit"
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
         disabled={loading}
       >
         {loading ? "Đang đăng nhập..." : "Đăng nhập"}
       </button>
-    </div>
+    </form>
   );
 }

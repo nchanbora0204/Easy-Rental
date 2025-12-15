@@ -42,7 +42,7 @@ export const register = async (req, res) => {
     if (exists)
       return res
         .status(409)
-        .json({ success: false, message: "Email already exists" });
+        .json({ success: false, message: "Email này đã được sử dụng" });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
@@ -80,13 +80,13 @@ export const login = async (req, res) => {
     if (!user)
       return res
         .status(401)
-        .json({ success: false, message: "Invalid email or password" });
+        .json({ success: false, message: "Sai email hoặc mật khẩu" });
 
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok)
       return res
         .status(401)
-        .json({ success: false, message: "Invalid email or password" });
+        .json({ success: false, message: "Sai email hoặc mật khẩu" });
 
     return res.json({
       success: true,
@@ -146,18 +146,18 @@ export const changePassword = async (req, res) => {
     if (!user)
       return res
         .status(404)
-        .json({ success: false, message: "User not found" });
+        .json({ success: false, message: "Không tìm thấy tài khoản" });
 
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!ok)
       return res
         .status(400)
-        .json({ success: false, message: "Old password is incorrect" });
+        .json({ success: false, message: "Mật khẩu cũ không đúng" });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    return res.json({ success: true, message: "Password updated" });
+    return res.json({ success: true, message: "Mật khẩu đã được cập nhật" });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }

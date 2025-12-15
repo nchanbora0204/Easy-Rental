@@ -1,13 +1,24 @@
 import { Navigate, useLocation } from "react-router-dom";
+import { useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function ProtectedRoute({
+const ProtectedRoute = ({
   children,
-  roles,
-  requireKycApproved,
-}) {
+  roles = null,
+  requireKycApproved = false,
+}) => {
   const { user, loading } = useAuth();
-  const loc = useLocation();
+  const { pathname, search } = useLocation();
+
+  const next = useMemo(
+    () => encodeURIComponent(`${pathname}${search}`),
+    [pathname, search]
+  );
+
+  const isAuthed = Boolean(user);
+  const hasRole = !roles || roles.includes(user?.role);
+  const needsKyc = requireKycApproved && user?.role === "owner";
+  const kycOk = user?.kycStatus === "approved";
 
   if (loading) {
     return (
@@ -17,22 +28,20 @@ export default function ProtectedRoute({
     );
   }
 
-  if (!user) {
-    const next = encodeURIComponent(loc.pathname + loc.search);
+  if (!isAuthed) {
     return <Navigate to={`/?auth=login&next=${next}`} replace />;
   }
 
-  if (roles && !roles.includes(user.role)) {
+  if (!hasRole) {
     return <Navigate to="/" replace />;
   }
 
-  if (
-    requireKycApproved &&
-    user.role === "owner" &&
-    user.kycStatus !== "approved"
-  ) {
+  if (needsKyc && !kycOk) {
     return <Navigate to="/register-car/pending" replace />;
   }
 
-  return children;
-}
+
+  return typeof children === "function" ? children({ user }) : children;
+};
+
+export default ProtectedRoute;

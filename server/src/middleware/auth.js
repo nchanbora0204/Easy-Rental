@@ -1,6 +1,6 @@
 import jwt, { decode } from "jsonwebtoken";
 import User from "../modules/users/user.model.js";
-// Xác thực Bearer token, gắn req.user = { id, role, name, email } 
+
 export const protect = (req, res, next) => {  
   try {
     const auth = req.headers.authorization || "";

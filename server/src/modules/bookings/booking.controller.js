@@ -14,8 +14,6 @@ const INSURANCE_MAP = {
 };
 
 const DOOR_FEE = 70000;
-// Kiểm tra có đặt chồng (overlap) không:
-// Điều kiện overlap chuẩn: startA < endB && endA > startB
 const hasOverlap = async (carId, start, end) => {
   return await Booking.exists({
     car: carId,
@@ -24,9 +22,6 @@ const hasOverlap = async (carId, start, end) => {
     returnDate: { $gt: start },
   });
 };
-
-// GET /check-availability?carId=&pickupDate=&returnDate=
-// Trả available: true/false dựa trên việc có conflict hay không
 export const checkAvailability = async (req, res) => {
   try {
     const { carId, pickupDate, returnDate } = req.query;
@@ -36,22 +31,19 @@ export const checkAvailability = async (req, res) => {
         message: "Missing carId/pickupDate/returnDate",
       });
     }
-    // Ép sang Date; kiểm tra khoảng hợp lệ
     const start = new Date(pickupDate);
     const end = new Date(returnDate);
     if (!(start < end))
       return res
         .status(400)
         .json({ success: false, message: "Invalid date range" });
-    // Tìm xem có booking nào trùng khoảng này không
     const conflict = await hasOverlap(carId, start, end);
     return res.json({ success: true, data: { available: !conflict } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
-// POST /bookings  (body: carId, pickupDate, returnDate)
-// Tạo booking mới nếu không trùng
+
 export const createBooking = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -60,46 +52,46 @@ export const createBooking = async (req, res) => {
     const carId = req.body.car || req.body.carId;
     const { pickupDate, returnDate } = req.body;
     if (!carId || !mongoose.Types.ObjectId.isValid(carId)) {
-      return res.status(400).json({ success: false, message: "carId invalid" });
+      return res.status(400).json({ success: false, message: "Mã xe (carID) không hợp lệ" });
     }
     const start = new Date(pickupDate);
     const end = new Date(returnDate);
     if (!(start < end)) {
       return res
         .status(400)
-        .json({ success: false, message: "Invalid date range" });
+        .json({ success: false, message: "Khoảng thời gian thuê xe không hợp lệ" });
     }
     const car = await Car.findById(carId);
     if (!car || !car.isAvailable) {
       return res
         .status(404)
-        .json({ success: false, message: "Car not found or unavailable" });
+        .json({ success: false, message: "Không tìm thấy xe hoặc xe hiện không khả dụng" });
     }
 
     const conflict = await hasOverlap(carId, start, end);
     if (conflict)
       return res.status(409).json({
         success: false,
-        message: "Booking overlaps existing reservation",
+        message: "Thời gian thuê xe bị trùng với một đơn khác",
       });
 
-    // Tính toán giá
+   
     const days = Math.max(1, Math.ceil((end - start) / msPerDay));
     const basePrice = Number(car.pricePerDay || 0);
     const baseTotal = days * basePrice;
-    // Các phí phụ thêm
+  
     const extras = req.body.extras || {};
     const pricing = req.body.pricing || {};
-    // Bảo hiểm
+   
     const insKey = extras.insuranceKey || "none";
     const insCfg = INSURANCE_MAP[insKey] || INSURANCE_MAP.none;
     const insuranceDaily = insCfg.daily || 0;
     const insuranceTotal = days * insuranceDaily;
-    // Giao nhận xe
+    
     const doorToDoor = !!extras.doorToDoor;
     const doorFee = extras.doorFee || DOOR_FEE;
     const deliveryTotal = doorToDoor ? doorFee * 2 : 0;
-    // Giảm giá
+    
     const discount = Number(pricing.discount || 0);
     const preVat = Math.max(
       0,
@@ -139,9 +131,6 @@ export const createBooking = async (req, res) => {
   }
 };
 
-//
-
-// Nguoi dung co the huy booking khi status = pending
 export const cancelByUser = async (req, res) => {
   const b = await Booking.findOne({
     _id: req.params.id,
@@ -158,7 +147,7 @@ export const cancelByUser = async (req, res) => {
     });
 
   const now = new Date();
-  // Neu da qua thoi diem lay xe thi khong duoc huy
+
   const hoursBeforePickup = (b.pickupDate - now) / (1000 * 60 * 60);
   if (hoursBeforePickup <= 0)
     return res

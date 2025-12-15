@@ -1,34 +1,56 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export default function RegisterForm({ onSuccess }) {
   const { register } = useAuth();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
   const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr("");
-    setLoading(true);
-    try {
-      await register({ name, email, password });
-      onSuccess?.();
-    } catch (e) {
-      setErr(e?.message || "Đăng ký thất bại");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const submit = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (loading) return;
+
+      setErr("");
+      setOk("");
+      setLoading(true);
+
+      try {
+        await register({ name, email, password });
+
+        setOk("Đăng ký thành công!");
+        // Nếu bạn muốn đóng modal / chuyển tab thì dùng onSuccess
+        onSuccess?.();
+      } catch (e) {
+        // ưu tiên message từ axios nếu có
+        const msg =
+          e?.response?.data?.message || e?.message || "Đăng ký thất bại";
+        setErr(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [register, name, email, password, onSuccess, loading]
+  );
 
   return (
-    <div className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       {err && (
         <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded">
           <p className="text-sm">{err}</p>
+        </div>
+      )}
+
+      {ok && !err && (
+        <div className="bg-green-50 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded">
+          <p className="text-sm">{ok}</p>
         </div>
       )}
 
@@ -42,6 +64,8 @@ export default function RegisterForm({ onSuccess }) {
           placeholder="Nguyễn Văn A"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          required
+          autoComplete="name"
         />
       </div>
 
@@ -55,6 +79,8 @@ export default function RegisterForm({ onSuccess }) {
           placeholder="your@email.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
         />
       </div>
 
@@ -69,11 +95,14 @@ export default function RegisterForm({ onSuccess }) {
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="new-password"
           />
           <button
             type="button"
-            onClick={() => setShowPassword(!showPassword)}
+            onClick={() => setShowPassword((v) => !v)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
           >
             {showPassword ? (
               <svg
@@ -115,12 +144,12 @@ export default function RegisterForm({ onSuccess }) {
       </div>
 
       <button
-        onClick={submit}
+        type="submit"
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
         disabled={loading}
       >
         {loading ? "Đang đăng ký..." : "Đăng ký"}
       </button>
-    </div>
+    </form>
   );
 }

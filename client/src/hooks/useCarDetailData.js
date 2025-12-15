@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../lib/axios";
+
+const pickCar = (data) => data?.data ?? data;
+
+const pickList = (res) => res?.data?.data ?? res?.data?.items ?? [];
 
 export function useCarDetailData(carId, stateCar) {
   const [car, setCar] = useState(stateCar || null);
@@ -10,70 +14,103 @@ export function useCarDetailData(carId, stateCar) {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    if (!carId) {
+    if (stateCar) setCar(stateCar);
+  }, [stateCar]);
+
+  const fetchCar = useCallback(
+    async (signal) => {
+      const res = await api.get(`/cars/${carId}`, { signal });
+      return pickCar(res.data);
+    },
+    [carId]
+  );
+
+  const fetchRelated = useCallback(
+    async (brand, currentId, signal) => {
+      try {
+        const res = await api.get("/cars", { params: { limit: 50 }, signal });
+        const list = pickList(res);
+
+        return list
+          .filter((x) => x?._id !== currentId && x?.brand === brand)
+          .slice(0, 8);
+      } catch (e) {
+        console.error("Không tải được xe tương tự", e);
+        return [];
+      }
+    },
+    []
+  );
+
+  const fetchReviews = useCallback(
+    async (signal) => {
+      try {
+        const { data } = await api.get(`/reviews/car/${carId}`, {
+          params: { page: 1, limit: 10 },
+          signal,
+        });
+
+        const items = data?.data?.items || [];
+        const total = data?.data?.total ?? items.length;
+
+        return { items, total };
+      } catch (e) {
+        console.error("Không tải được đánh giá", e);
+        return { items: [], total: 0 };
+      }
+    },
+    [carId]
+  );
+
+  const isReady = useMemo(() => Boolean(carId), [carId]);
+
+  useEffect(() => {
+    if (!isReady) {
       setErr("Không tìm thấy xe");
       setLoading(false);
       return;
     }
-    let alive = true;
-    if (stateCar) setCar(stateCar);
 
-    const loadCar = async () => {
+    const controller = new AbortController();
+
+    const run = async () => {
       setLoading(true);
       setErr("");
+
       try {
-        const { data } = await api.get(`/cars/${carId}`);
-        const c = data?.data || data;
-        if (!alive) return;
+        const c = await fetchCar(controller.signal);
         setCar(c);
 
-        try {
-          const resRel = await api.get("/cars", { params: { limit: 50 } });
-          if (!alive) return;
-          const list = resRel.data?.data || resRel.data?.items || [];
-          const sameBrand = list
-            .filter((x) => x._id !== c._id && x.brand === c.brand)
-            .slice(0, 8);
-          setRelated(sameBrand);
-        } catch (e) {
-          console.error("Không tải được xe tương tự", e);
-        }
+      
+        const [rel, rev] = await Promise.all([
+          fetchRelated(c?.brand, c?._id, controller.signal),
+          fetchReviews(controller.signal),
+        ]);
+
+        setRelated(rel);
+        setReviews(rev.items);
+        setReviewTotal(rev.total);
       } catch (e) {
-        if (alive)
+        
+        const aborted =
+          e?.name === "CanceledError" ||
+          e?.name === "AbortError" ||
+          e?.code === "ERR_CANCELED";
+
+        if (!aborted) {
           setErr(
-            e?.response?.data?.message ||
-              e.message ||
-              "Không tải được thông tin xe"
+            e?.response?.data?.message || e?.message || "Không tải được thông tin xe"
           );
+        }
       } finally {
-        if (alive) setLoading(false);
+        setLoading(false);
       }
     };
 
-    const loadReviews = async () => {
-      try {
-        const { data } = await api.get(`/reviews/car/${carId}`, {
-          params: { page: 1, limit: 10 },
-        });
-        if (!alive) return;
-        const items = data?.data?.items || [];
-        const total = data?.data?.total ?? items.length;
-        setReviews(items);
-        setReviewTotal(total);
-      } catch (e) {
-        console.error("Không tải được đánh giá", e);
-        if (!alive) return;
-        setReviews([]);
-        setReviewTotal(0);
-      }
-    };
+    run();
 
-    loadCar();
-    loadReviews();
-    return () => {
-      alive = false;
-    };
-  }, [carId, stateCar]);
+    return () => controller.abort();
+  }, [isReady, fetchCar, fetchRelated, fetchReviews]);
 
   return { car, related, reviews, reviewTotal, loading, err, setErr };
 }

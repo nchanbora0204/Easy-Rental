@@ -108,7 +108,7 @@ export const deleteBlock = async (req, res) => {
     if (!block) {
       return res
         .status(404)
-        .json({ successL: false, message: "Block không tồn tại" });
+        .json({ success: false, message: "Block không tồn tại" });
     }
 
     return res.json({ success: true, data: block });

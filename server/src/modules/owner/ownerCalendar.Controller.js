@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Booking from "../bookings/booking.model.js";
 import OwnerBlock from "./ownerBlock.model.js";
 
@@ -15,11 +16,13 @@ function parseRange(q) {
 
   return { from: fromStart, to: toEnd };
 }
+const toObjectId = (id) =>
+  mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
 
 // Lấy lịch của chủ xe
 export async function getOwnerCalendar(req, res) {
   try {
-    const ownerId = req.user._id;
+    const ownerId = toObjectId(req.user.id);
     const { from, to } = parseRange(req.query);
 
     const matchBooking = {
@@ -45,17 +48,13 @@ export async function getOwnerCalendar(req, res) {
 
     return res.json({
       success: true,
-      data: {
-        range: { from, to },
-        bookings,
-        blocks,
-      },
+      data: { range: { from, to }, bookings, blocks },
     });
   } catch (e) {
     console.error("[getOwnerCalendar] error:", e);
     return res.status(500).json({ success: false, message: e.message });
   }
-}
+} 
 
 // Tạo block ngày không cho thuê
 export const createBlock = async (req, res) => {

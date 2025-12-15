@@ -4,7 +4,7 @@ import Car from "../cars/car.model.js";
 import mongoose from "mongoose";
 import * as XLSX from "xlsx";
 
-const OVERLAP_STATUSES = ["pending", "confirmed"];
+const OVERLAP_STATUSES = ["pending", "confirmed", "ongoing"];
 const msPerDay = 24 * 60 * 60 * 1000;
 
 const INSURANCE_MAP = {
@@ -18,8 +18,8 @@ const hasOverlap = async (carId, start, end) => {
   return await Booking.exists({
     car: carId,
     status: { $in: OVERLAP_STATUSES },
-    pickupDate: { $lt: end },
-    returnDate: { $gt: start },
+    pickupDate: { $lte: end },
+    returnDate: { $gte: start },
   });
 };
 export const checkAvailability = async (req, res) => {
@@ -52,20 +52,28 @@ export const createBooking = async (req, res) => {
     const carId = req.body.car || req.body.carId;
     const { pickupDate, returnDate } = req.body;
     if (!carId || !mongoose.Types.ObjectId.isValid(carId)) {
-      return res.status(400).json({ success: false, message: "Mã xe (carID) không hợp lệ" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Mã xe (carID) không hợp lệ" });
     }
     const start = new Date(pickupDate);
     const end = new Date(returnDate);
     if (!(start < end)) {
       return res
         .status(400)
-        .json({ success: false, message: "Khoảng thời gian thuê xe không hợp lệ" });
+        .json({
+          success: false,
+          message: "Khoảng thời gian thuê xe không hợp lệ",
+        });
     }
     const car = await Car.findById(carId);
     if (!car || !car.isAvailable) {
       return res
         .status(404)
-        .json({ success: false, message: "Không tìm thấy xe hoặc xe hiện không khả dụng" });
+        .json({
+          success: false,
+          message: "Không tìm thấy xe hoặc xe hiện không khả dụng",
+        });
     }
 
     const conflict = await hasOverlap(carId, start, end);
@@ -75,23 +83,22 @@ export const createBooking = async (req, res) => {
         message: "Thời gian thuê xe bị trùng với một đơn khác",
       });
 
-   
     const days = Math.max(1, Math.ceil((end - start) / msPerDay));
     const basePrice = Number(car.pricePerDay || 0);
     const baseTotal = days * basePrice;
-  
+
     const extras = req.body.extras || {};
     const pricing = req.body.pricing || {};
-   
+
     const insKey = extras.insuranceKey || "none";
     const insCfg = INSURANCE_MAP[insKey] || INSURANCE_MAP.none;
     const insuranceDaily = insCfg.daily || 0;
     const insuranceTotal = days * insuranceDaily;
-    
+
     const doorToDoor = !!extras.doorToDoor;
     const doorFee = extras.doorFee || DOOR_FEE;
     const deliveryTotal = doorToDoor ? doorFee * 2 : 0;
-    
+
     const discount = Number(pricing.discount || 0);
     const preVat = Math.max(
       0,
@@ -175,7 +182,6 @@ export const updateStatusByOwner = async (req, res) => {
       .status(404)
       .json({ success: false, message: "Booking not found" });
 
-  // Luu y: chi cho phep chuyen trang thai hop ly
   const invalidComplete = status === "completed" && b.status !== "ongoing";
   const invalidOngoing = status === "ongoing" && b.status !== "confirmed";
   if (invalidComplete || invalidOngoing)
@@ -207,14 +213,17 @@ export const myBookings = async (req, res) => {
           from: "reviews",
           localField: "_id",
           foreignField: "booking",
-          as: "review", 
+          as: "review",
         },
       },
       {
         $project: {
-          ...Object.keys(Booking.schema.paths).reduce((acc, path) => ({ ...acc, [path]: 1 }), {}),
-          car: { $first: "$car" }, 
-          review: { $first: "$review._id" }, 
+          ...Object.keys(Booking.schema.paths).reduce(
+            (acc, path) => ({ ...acc, [path]: 1 }),
+            {}
+          ),
+          car: { $first: "$car" },
+          review: { $first: "$review._id" },
         },
       },
     ]);

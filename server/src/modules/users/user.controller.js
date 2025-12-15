@@ -4,12 +4,22 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "./user.model.js";
 
-//helper trả về user đã loại bỏ password hash
 const sanitize = (u) => {
   if (!u) return null;
   const obj = u.toObject ? u.toObject() : u;
-  const { _id, name, email, role, phone, city, avatar, createdAt, updatedAt } =
-    obj;
+
+  const {
+    _id,
+    name,
+    email,
+    role,
+    phone,
+    city,
+    avatar,
+    avatarPublicId,
+    createdAt,
+    updatedAt,
+  } = obj;
   return {
     id: _id?.toString?.() || _id,
     name,
@@ -18,6 +28,7 @@ const sanitize = (u) => {
     phone,
     city,
     avatar,
+    avatarPublicId,
     createdAt,
     updatedAt,
   };
@@ -107,7 +118,9 @@ export const login = async (req, res) => {
 
 export const me = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-passwordHash");
+    const user = await User.findById(req.user.id).select(
+      "-passwordHash -resetPasswordToken -resetPasswordExp"
+    );
     return res.json({ success: true, data: user });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -126,7 +139,7 @@ export const updateMe = async (req, res) => {
 
     const user = await User.findByIdAndUpdate(req.user.id, update, {
       new: true,
-    }).select("-passwordHash");
+    }).select("-passwordHash -resetPasswordToken -resetPasswordExp");
 
     return res.json({ success: true, data: sanitize(user) });
   } catch (e) {
@@ -174,7 +187,7 @@ export const forgotPassword = async (req, res) => {
       user.resetPasswordToken = token;
       user.resetPasswordExp = new Date(Date.now() + 60 * 60 * 1000);
       await user.save({ validateBeforeSave: false });
-      const link = `${process.env.FRONTEND_URL}/?auth=reset%token=${token}`;
+      const link = `${process.env.FRONTEND_URL}/?auth=reset&token=${token}`;
       return res.json({
         success: true,
         message:
@@ -195,8 +208,7 @@ export const forgotPassword = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body || {};
-    if (!token || password) {
-      //  
+    if (!token || !password) {
       return res
         .status(400)
         .json({ success: false, message: "Thiết  token hoặc mật khẩu" });

@@ -7,23 +7,22 @@ import {
   deletePost,
   togglePublish,
 } from "./blog.controller.js";
-import { protect, requireAdmin } from "../../middleware/auth.js";
+import {
+  protect,
+  requireAdmin,
+  protectOptional,
+} from "../../middleware/auth.js";
 
 const router = Router();
 
 //public routes
-router.get("/", listPosts);
+router.get("/", protectOptional, listPosts);
+router.get("/:slug", protectOptional, getPost);
 
-router.get("/:slug", getPost);
-
-//admin routes
-
-router.post("/", createPost, requireAdmin, protect);
-
-router.put("/:id", updatePost, requireAdmin, protect);
-
-router.delete("/:id", deletePost, requireAdmin, protect);
-
-router.patch("/:id/publish", togglePublish, requireAdmin, protect);
+// admin routes
+router.post("/", protect, requireAdmin, createPost);
+router.put("/:id", protect, requireAdmin, updatePost);
+router.delete("/:id", protect, requireAdmin, deletePost);
+router.patch("/:id/publish", protect, requireAdmin, togglePublish);
 
 export default router;

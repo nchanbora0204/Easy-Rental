@@ -5,13 +5,6 @@ import { uploadKycBatch,uploadKycImage, uploadCarImages, uploadAvatar, deleteIma
 
 const router = Router();
 
-/**
- * @swagger
- * tags:
- *   name: Uploads
- *   description: Upload ảnh tự động theo loại (KYC / Avatar / Car)
- */
-
 // KYC (1 ảnh)
 router.post("/kyc", protect, uploadKycFields, uploadKycBatch);
 

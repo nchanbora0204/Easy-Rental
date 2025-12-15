@@ -33,12 +33,10 @@ export const listPosts = async (req, res) => {
     const perPage = Math.min(Math.max(Number(limit) || 10, 1), 50);
     const skip = (pageNum - 1) * perPage;
 
-    const filter = { isPublished: true };
+    const wantUnpublished = includeUnpublished === "true";
+    const isAdmin = req.user?.role === "admin";
 
-    const isAdminView = includeUnpublished === "true";
-    if (!isAdminView) {
-      filter.isPublished = true;
-    }
+    const filter = wantUnpublished && isAdmin ? {} : { isPublished: true };
 
     if (category && category !== "all") {
       filter.category = category;
@@ -73,12 +71,7 @@ export const listPosts = async (req, res) => {
 
     return res.json({
       success: true,
-      data: {
-        items,
-        total,
-        page: pageNum,
-        limit: perPage,
-      },
+      data: { items, total, page: pageNum, limit: perPage },
     });
   } catch (e) {
     console.error("listPosts error", e);
@@ -90,24 +83,27 @@ export const getPost = async (req, res) => {
   try {
     const { slug } = req.params;
 
+    const isAdmin = req.user?.role === "admin";
+
     let post;
     if (mongoose.Types.ObjectId.isValid(slug)) {
       post = await BlogPost.findById(slug).lean();
     } else {
       post = await BlogPost.findOne({ slug }).lean();
     }
-
-    if (!post || !post.isPublished) {
+    if (!post || (!isAdmin && !post.isPublished)) {
       return res.status(404).json({
         success: false,
         message: "Bài viết không tồn tại hoặc đã bị gỡ.",
       });
     }
 
-    // tang view
-    BlogPost.updateOne({ _id: post._id }, { $inc: { "meta.views": 1 } }).catch(
-      () => {}
-    );
+    if (post.isPublished) {
+      BlogPost.updateOne(
+        { _id: post._id },
+        { $inc: { "meta.views": 1 } }
+      ).catch(() => {});
+    }
 
     return res.json({ success: true, data: post });
   } catch (e) {

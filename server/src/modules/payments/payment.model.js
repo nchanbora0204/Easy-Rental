@@ -30,7 +30,7 @@ const paymentSchema = new mongoose.Schema(
       default: "created",
       index: true,
     },
-    expiresAt: { type: Date },
+    expiresAt: { type: Date, default: null },
     webhookPayload: mongoose.Schema.Types.Mixed,
   },
   { timestamps: true }
@@ -39,6 +39,5 @@ const paymentSchema = new mongoose.Schema(
 paymentSchema.index({ booking: 1, status: 1 });
 paymentSchema.index({ createdAt: 1 });
 paymentSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
 
 export default mongoose.model("Payment", paymentSchema);

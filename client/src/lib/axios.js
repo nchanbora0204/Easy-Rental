@@ -24,7 +24,7 @@ api.interceptors.response.use(
         err.config?.url,
         err.response?.status,
         err.response?.data
-      );
+      );``
     }
     return Promise.reject(err);
   }

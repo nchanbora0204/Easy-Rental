@@ -6,11 +6,6 @@ import { buildSePayQrUrl } from "./payment.service.js";
 import { sendMail } from "../../utils/mailer.js";
 import { buildInvoicePdfBuffer } from "../invoices/invoice.service.js";
 
-/**
- * POST /api/payments/create
- * Body: { bookingId }
- * Trả về: qrUrl + paymentId + orderCode
- */
 export const createPaymentForBooking = async (req, res) => {
   try {
     const { bookingId } = req.body;
@@ -26,8 +21,8 @@ export const createPaymentForBooking = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Booking status must be pending" });
 
-    const orderCode = `SEPAY_BOOKING_${booking._id}`; // mã nội bộ
-    const description = `BOOKING_${booking._id}`; // nội dung chuyển khoản
+    const orderCode = `SEPAY_BOOKING_${booking._id}`;
+    const description = `BOOKING_${booking._id}`;
     const qrUrl = buildSePayQrUrl({ amount: booking.total, description });
 
     const expiresAt = new Date(
@@ -63,9 +58,6 @@ export const createPaymentForBooking = async (req, res) => {
   }
 };
 
-/**
- * GET /api/payments/instruction/:bookingId
- */
 export const getPaymentInstruction = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.bookingId);
@@ -83,7 +75,7 @@ export const getPaymentInstruction = async (req, res) => {
       success: true,
       data: {
         bookingId: booking._id,
-        amount: booking.total, // <— sửa ở đây
+        amount: booking.total,
         currency: booking.currency || "VND",
         transferContent: description,
         qrUrl,
@@ -99,20 +91,29 @@ export const readBooking = async (req, res) => {
     const b = await Booking.findById(req.params.id)
       .populate({ path: "car" })
       .populate({ path: "owner", select: "name email" })
+      .populate({ path: "user", select: "name email" })
       .lean();
-    if (!b)
+
+    if (!b) {
       return res
         .status(404)
         .json({ success: false, message: "Booking not found" });
+    }
+
+    const isAdmin = req.user?.role === "admin";
+    const isOwner = String(b.owner?._id || b.owner) === String(req.user.id);
+    const isUser = String(b.user?._id || b.user) === String(req.user.id);
+
+    if (!isAdmin && !isOwner && !isUser) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
     return res.json({ success: true, data: b });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
 
-/**
- * POST /api/payments/webhook
- */
 export const paymentWebhook = async (req, res) => {
   try {
     const payload = req.body || {};
@@ -128,7 +129,6 @@ export const paymentWebhook = async (req, res) => {
       payload.amount_in || payload.amount || payload.money || 0
     );
 
-    // Booking._id là ObjectId 24 hex
     const m = text.match(/BOOKING_([a-f0-9]{24})/i);
     if (!m) {
       return res
@@ -146,7 +146,6 @@ export const paymentWebhook = async (req, res) => {
       });
     }
 
-    // đối soát số tiền
     const tolerance = Number(process.env.PAYMENT_AMOUNT_TOLERANCE || 0);
     const expected = Number(booking.total || 0);
     const diff = Math.abs(expected - amount);
@@ -157,10 +156,10 @@ export const paymentWebhook = async (req, res) => {
       });
     }
 
-    // tìm/tạo payment
     let payment = await Payment.findOne({
       booking: booking._id,
       provider: "SePay",
+      status: { $in: ["created", "awaiting"] },
     });
     if (!payment) {
       payment = await Payment.create({
@@ -169,18 +168,17 @@ export const paymentWebhook = async (req, res) => {
         currency: booking.currency || "VND",
         provider: "SePay",
         method: "QR",
-        orderCode: `SEPAY_BOOKING_${booking._id}`, // <— thống nhất format
+        orderCode: `SEPAY_BOOKING_${booking._id}`,
         status: "awaiting",
       });
     }
 
-    // mark paid
     payment.status = "paid";
     payment.webhookPayload = payload;
+    payment.expiresAt = null;
     await payment.save();
     console.log("[Webhook] Payment marked paid");
 
-    // confirm booking nếu đang pending
     let needInvoice = false;
     if (booking.status === "pending") {
       booking.status = "confirmed";
@@ -188,8 +186,6 @@ export const paymentWebhook = async (req, res) => {
       needInvoice = true;
       console.log("[Webhook] Booking confirmed");
     }
-
-    // gửi hóa đơn
     if (needInvoice) {
       try {
         console.log("[Webhook] Creating invoice PDF & sending email...");
@@ -207,10 +203,7 @@ export const paymentWebhook = async (req, res) => {
   }
 };
 
-// Helper gửi hóa đơn email
 async function sendInvoiceEmailForBooking(bookingId) {
-  // Có thể bỏ populate ở đây vì ta fetch User/Car riêng; nếu vẫn muốn populate thì dùng đúng tên field:
-  // const booking = await Booking.findById(bookingId).populate("car owner user");
   const booking = await Booking.findById(bookingId);
   if (!booking) throw new Error("Booking not found");
 
@@ -245,3 +238,27 @@ async function sendInvoiceEmailForBooking(bookingId) {
     attachments: [{ filename: `invoice_${booking._id}.pdf`, content: pdf }],
   });
 }
+
+export const resendInvoice = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.bookingId).lean();
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn thuê" });
+    }
+
+    const isAdmin = req.user?.role === "admin";
+    const isOwner = String(booking.owner) === String(req.user.id);
+    const isUser = String(booking.user) === String(req.user.id);
+
+    if (!isAdmin && !isOwner && !isUser) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+    await sendInvoiceEmailForBooking(booking._id);
+
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};

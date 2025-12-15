@@ -1,7 +1,7 @@
 import jwt, { decode } from "jsonwebtoken";
 import User from "../modules/users/user.model.js";
 
-export const protect = (req, res, next) => {  
+export const protect = (req, res, next) => {
   try {
     const auth = req.headers.authorization || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
@@ -56,4 +56,16 @@ export const requireAdmin = (req, res, next) => {
   next();
 };
 
+export const protectOptional = (req, res, next) => {
+  try {
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return next();
 
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = { id: payload.id, role: payload.role };
+    return next();
+  } catch {
+    return next();
+  }
+};

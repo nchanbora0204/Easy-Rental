@@ -1,5 +1,15 @@
 import mongoose from "mongoose";
 
+const insuranceSchema = new mongoose.Schema(
+  {
+    key: { type: String, default: "none" },
+    label: { type: String, default: "" },
+    daily: { type: Number, default: 0, min: 0 },
+    total: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false }
+);
+
 const bookingSchema = new mongoose.Schema(
   {
     car: {
@@ -38,6 +48,19 @@ const bookingSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
+
+    basePrice: { type: Number, default: 0, min: 0 },
+    baseTotal: { type: Number, default: 0, min: 0 },
+
+    insurance: { type: insuranceSchema, default: () => ({}) },
+
+    doorToDoor: { type: Boolean, default: false },
+    doorFee: { type: Number, default: 0, min: 0 },
+    deliveryTotal: { type: Number, default: 0, min: 0 },
+
+    discount: { type: Number, default: 0, min: 0 },
+    vat: { type: Number, default: 0, min: 0 },
+
     total: { type: Number, required: true, min: 0 },
     currency: { type: String, default: "VND" },
   },
@@ -50,5 +73,7 @@ bookingSchema.index({ status: 1, createdAt: 1 });
 
 bookingSchema.index({ car: 1, pickupDate: 1 });
 bookingSchema.index({ car: 1, returnDate: 1 });
+
+bookingSchema.index({ user: 1, createdAt: -1 });
 
 export default mongoose.model("Booking", bookingSchema);

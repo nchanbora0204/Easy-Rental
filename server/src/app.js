@@ -6,18 +6,14 @@ import carRoutes from "./modules/cars/car.routes.js";
 import bookingRoutes from "./modules/bookings/booking.routes.js";
 import reviewRoutes from "./modules/reviews/review.routes.js";
 import paymentRoutes from "./modules/payments/payment.routes.js";
-import swaggerUi from "swagger-ui-express";
-import { buildSwaggerSpec } from "./docs/swagger.js";
 import invoiceRoutes from "./modules/invoices/invoice.routes.js";
 import kycRoutes from "./modules/kyc/kyc.routes.js";
 import adminKycRoutes from "./modules/admin/admin.routes.js";
 import uploadRoutes from "./modules/uploads/upload.routes.js";
 import statsRoutes from "./modules/stats/stats.routes.js";
 import ownerRoutes from "./modules/owner/owner.routes.js";
-import { notFound, errorHandler } from "./middleware/errors.js";
 import blogRoutes from "./modules/blog/blog.routes.js";
 import searchRoutes from "./modules/search/search.routes.js";
-
 const app = express();
 
 // const limiter = ratelimit({
@@ -29,9 +25,22 @@ const app = express();
 //     "Quá nhiều yêu cầu đến từ địa chỉ IP này, vui lòng thử lại sau 15 phút",
 // });
 
+const allowedOrigins = (process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+
+      if (allowedOrigins.length === 0) return cb(null, true);
+
+      return allowedOrigins.includes(origin)
+        ? cb(null, true)
+        : cb(new Error("CORS blocked"));
+    },
     credentials: true,
   })
 );
@@ -54,9 +63,6 @@ app.use("/api/owner", ownerRoutes);
 
 app.get("/", (req, res) => res.send("API is running..."));
 
-const spec = buildSwaggerSpec();
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(spec));
-
 app.use("/api/payments", paymentRoutes);
 app.use("/api/auth", userRoutes);
 app.use("/api/users", userRoutes);
@@ -65,8 +71,5 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/search", searchRoutes);
-
-app.use(notFound);
-app.use(errorHandler);
 
 export default app;

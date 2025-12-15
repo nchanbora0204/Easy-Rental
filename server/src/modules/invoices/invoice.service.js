@@ -3,7 +3,6 @@ import dayjs from "dayjs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ==== Đường dẫn font (nhớ đã chép .ttf vào src/assets/fonts) ====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FONTS_DIR = path.join(__dirname, "../../assets/fonts");
@@ -17,7 +16,7 @@ function formatCurrency(n, cur = "VND") {
   }
 }
 
-// Tạo PDF hóa đơn từ booking, car, user -> Buffer
+// Tạo pdf
 export async function buildInvoicePdfBuffer({ booking, user, car }) {
   return await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
@@ -26,7 +25,6 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    // ==== Đăng ký font tiếng Việt (bắt buộc để không vỡ dấu) ====
     doc.registerFont("Regular", path.join(FONTS_DIR, "NotoSans-Regular.ttf"));
     doc.registerFont("Bold",    path.join(FONTS_DIR, "NotoSans-Bold.ttf"));
 
@@ -35,7 +33,6 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     const right = pageWidth - 50;
     const contentW = right - left;
 
-    // ============ HEADER ============
     doc
       .font("Bold").fontSize(22).fillColor("#2563eb")
       .text("HÓA ĐƠN THUÊ XE", left, 48, { width: contentW, align: "center" });
@@ -56,10 +53,9 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     doc.fillColor("#666");
     doc.text(`Ngày lập: ${dayjs().format("DD/MM/YYYY HH:mm")}`, right - 220, y + 15, { width: 220, align: "right" });
 
-    // ============ 2 BOX: KHÁCH HÀNG & XE ============
     y = 170;
 
-    // Box khách hàng
+  
     doc.save().lineWidth(1).fillAndStroke("#f3f4f6", "#e5e7eb");
     doc.roundedRect(left, y, contentW / 2 - 10, 90, 8).fillAndStroke();
     doc.restore();
@@ -87,12 +83,12 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     doc.text(`Hộp số: ${car?.transmission ?? "-"}`, boxR + 160, y + 50);
     doc.text(`Đơn giá/ngày: ${formatCurrency(car?.pricePerDay, booking?.currency)}`, boxR + 14, y + 66);
 
-    // ============ BẢNG CHI TIẾT ============
+  
     y = 290;
     doc.font("Bold").fillColor("#2563eb").fontSize(14).text("Chi tiết đơn thuê", left, y);
     y += 22;
 
-    // Header row
+  
     const thH = 26;
     doc.save().fill("#2563eb");
     doc.rect(left, y, contentW, thH).fill();
@@ -106,7 +102,7 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     const rowH = 24;
     y += thH;
 
-    // Row: Ngày nhận
+  
     doc.strokeColor("#e5e7eb").rect(left, y, contentW, rowH).stroke();
     doc.font("Regular").fillColor("#000").fontSize(10);
     doc.text(`Ngày nhận xe: ${dayjs(booking.pickupDate).format("DD/MM/YYYY HH:mm")}`, left + 10, y + 6, {
@@ -114,14 +110,14 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     });
     y += rowH;
 
-    // Row: Ngày trả
+
     doc.rect(left, y, contentW, rowH).stroke();
     doc.text(`Ngày trả xe: ${dayjs(booking.returnDate).format("DD/MM/YYYY HH:mm")}`, left + 10, y + 6, {
       width: contentW * 0.5,
     });
     y += rowH;
 
-    // Row: Đơn giá/ngày
+ 
     doc.rect(left, y, contentW, rowH).stroke();
     doc.text("Đơn giá thuê xe/ngày", left + 10, y + 6, { width: contentW * 0.5 });
     doc.text(`1 ngày`, left + contentW * 0.5, y + 6, { width: contentW * 0.2, align: "center" });
@@ -130,7 +126,6 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     });
     y += rowH;
 
-    // Row: Số ngày thuê
     const days = booking?.days ?? "";
     doc.rect(left, y, contentW, rowH).stroke();
     doc.text("Tổng số ngày thuê", left + 10, y + 6, { width: contentW * 0.5 });
@@ -140,7 +135,6 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
     });
     y += rowH + 8;
 
-    // ============ TỔNG TIỀN ============
     doc
       .save()
       .fillColor("#2563eb")
@@ -156,7 +150,6 @@ export async function buildInvoicePdfBuffer({ booking, user, car }) {
       { width: contentW * 0.4 - 14, align: "right" }
     );
 
-    // ============ FOOTER ============
     y += 56;
     doc.fillColor("#6b7280").font("Regular").fontSize(9)
       .text("Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi!", left, y, { width: contentW, align: "center" });

@@ -92,6 +92,10 @@ const SearchCars = () => {
     try {
       const params = {};
 
+      if (f.pickup) params.pickupDate = f.pickup;
+      if (f.return) params.returnDate = f.return;
+      if (f.pickupTime) params.pickupTime = f.pickupTime;
+      if (f.returnTime) params.returnTime = f.returnTime;
       if (f.city) params.city = f.city;
       if (f.seats) params.seats = f.seats;
       if (f.minPrice) params.minPrice = f.minPrice;

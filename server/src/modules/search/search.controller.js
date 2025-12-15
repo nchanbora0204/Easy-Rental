@@ -1,13 +1,9 @@
-// server/src/modules/search/search.controller.js
 import { semanticSearchCars } from "./semantic.service.js";
 
 export const searchCarsSemantic = async (req, res) => {
   try {
-    // LẤY QUERY TỪ req.query.q ĐÚNG VỚI FRONTEND
     const q = (req.query.q || "").trim();
     const limit = Number(req.query.limit) || 20;
-
-    // Nếu người dùng không gõ gì thì trả về mảng rỗng, KHÔNG gọi semantic
     if (!q) {
       return res.json({ success: true, data: [] });
     }

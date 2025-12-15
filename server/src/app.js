@@ -18,11 +18,12 @@ const app = express();
 
 const limiter = ratelimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: Number(process.env.RATE_LIMIT_MAX || 2000), 
   standardHeaders: true,
   legacyHeaders: false,
-  message:
-    "Quá nhiều yêu cầu đến từ địa chỉ IP này, vui lòng thử lại sau 15 phút",
+  message: "Quá nhiều yêu cầu, vui lòng thử lại sau.",
+
+  skipSuccessfulRequests: true,
 });
 
 const allowedOrigins = (process.env.FRONTEND_URL || "")
@@ -47,7 +48,7 @@ app.use(
 
 app.use(express.json());
 
-app.use(limiter);
+// app.use(limiter);
 
 app.use("/api/invoices", invoiceRoutes);
 
@@ -55,7 +56,7 @@ app.use("/api/kyc", kycRoutes);
 
 app.use("/api/admin", adminKycRoutes);
 
-app.use("/api/uploads", uploadRoutes);
+app.use("/api/uploads", uploadRoutes, limiter);
 
 app.use("/api/stats", statsRoutes);
 
@@ -63,8 +64,8 @@ app.use("/api/owner", ownerRoutes);
 
 app.get("/", (req, res) => res.send("API is running..."));
 
-app.use("/api/payments", paymentRoutes);
-app.use("/api/auth", userRoutes);
+app.use("/api/payments", paymentRoutes, limiter);
+app.use("/api/auth", userRoutes, limiter);
 app.use("/api/users", userRoutes);
 app.use("/api/cars", carRoutes);
 app.use("/api/bookings", bookingRoutes);

@@ -232,7 +232,7 @@ const CITY_ALIAS = {
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-//listCars mới
+//listCars
 export const listCars = async (req, res) => {
   try {
     const {
@@ -244,15 +244,40 @@ export const listCars = async (req, res) => {
       brand,
       fuel,
       sort,
-      segment,
-      featured,
-      limit,
-    } = req.query;
+        segment,
+        featured,
+        limit,
+        pickupDate,
+        returnDate,
+      } = req.query;
 
-    const q = {
-      isAvailable: true,
-      deletedAt: { $exists: false },
-    };
+      const q = {
+        isAvailable: true,
+        deletedAt: { $exists: false },
+      };
+
+      let start = null;
+      let end = null;
+      if (pickupDate || returnDate) {
+        if (!pickupDate || !returnDate) {
+          return res.status(400).json({
+            success: false,
+            message: "Thi\u1ebfu ng\u00e0y nh\u1eadn/tr\u1ea3 \u0111\u1ec3 l\u1ecdc theo kho\u1ea3ng th\u1eddi gian.",
+          });
+        }
+        start = new Date(pickupDate);
+        end = new Date(returnDate);
+        const invalidRange =
+          Number.isNaN(start.getTime()) ||
+          Number.isNaN(end.getTime()) ||
+          end < start;
+        if (invalidRange) {
+          return res.status(400).json({
+            success: false,
+            message: "Kho\u1ea3ng ng\u00e0y nh\u1eadn/tr\u1ea3 kh\u00f4ng h\u1ee3p l\u1ec7.",
+          });
+        }
+      }
 
     //lọc theo tp
     if (city) {
@@ -353,6 +378,19 @@ export const listCars = async (req, res) => {
 
     const _limit =
       Number(limit) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 100;
+
+    if (start && end) {
+      const conflictCarIds = await Booking.distinct("car", {
+        status: { $in: ["pending", "confirmed", "ongoing"] },
+        pickupDate: { $lt: end },
+        returnDate: { $gt: start },
+      });
+      if (conflictCarIds.length) {
+        q._id = q._id || {};
+        q._id.$nin = conflictCarIds;
+      }
+    }
+
     const cars = await Car.find(q).sort(sortOpt).limit(_limit);
     return res.json({ success: true, data: cars });
   } catch (e) {

@@ -8,6 +8,10 @@ export const CITY_OPTIONS = [
 ];
 
 export const DEFAULT_FILTERS = {
+  pickup: "",
+  return: "",
+  pickupTime: "",
+  returnTime: "",
   city: "",
   seats: "",
   minPrice: "",
@@ -21,6 +25,10 @@ export const DEFAULT_FILTERS = {
 };
 
 export const FILTER_KEYS = [
+  "pickup",
+  "return",
+  "pickupTime",
+  "returnTime",
   "city",
   "seats",
   "minPrice",
@@ -64,7 +72,9 @@ export const buildSearchParamsFromFilters = (filters) => {
 
 export const hasActiveFilters = (filters) => {
   return Boolean(
-    filters.city ||
+    filters.pickup ||
+      filters.return ||
+      filters.city ||
       filters.seats ||
       filters.minPrice ||
       filters.maxPrice ||

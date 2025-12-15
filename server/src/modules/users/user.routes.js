@@ -8,6 +8,8 @@ import {
   changePassword,
   forgotPassword,
   resetPassword,
+  verifyEmail,
+  resendVerifyEmail,
 } from "./user.controller.js";
 import { protect } from "../../middleware/auth.js";
 
@@ -30,7 +32,23 @@ router.post(
 router.get("/me", protect, me);
 router.patch("/me", protect, updateMe);
 router.post("/change-password", protect, changePassword);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
+router.post("/forgot-password", body("email").isEmail(), forgotPassword);
+router.post(
+  "/reset-password",
+  body("token").notEmpty().withMessage("Token is required"),
+  body("password").isLength({ min: 6 }),
+  resetPassword
+);
+router.post(
+  "/verify-email",
+  body("token").notEmpty().withMessage("Token is required"),
+  verifyEmail
+);
+router.post(
+  "/resend-verify-email",
+  protect,
+  body("email").optional().isEmail(),
+  resendVerifyEmail
+);
 
 export default router;

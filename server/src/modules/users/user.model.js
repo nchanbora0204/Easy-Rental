@@ -69,6 +69,9 @@ const userSchema = new mongoose.Schema(
     kycProfile: kycProfileSchema,
     resetPasswordToken: { type: String },
     resetPasswordExp: { type: Date },
+    emailVerified: { type: Boolean, default: false, index: true },
+    emailVerifyToken: { type: String },
+    emailVerifyExp: { type: Date },
   },
   { timestamps: true }
 );

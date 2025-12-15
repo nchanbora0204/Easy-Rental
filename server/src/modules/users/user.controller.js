@@ -2,6 +2,7 @@ import { validationResult } from "express-validator";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { sendMail } from "../../utils/mailer.js";
 import User from "./user.model.js";
 
 const sanitize = (u) => {
@@ -42,6 +43,41 @@ const signToken = (u) =>
     { expiresIn: "30d" }
   );
 
+const buildFrontendUrl = () => process.env.FRONTEND_URL || "";
+
+const createEmailVerifyToken = async (user) => {
+  const token = crypto.randomBytes(32).toString("hex");
+  user.emailVerifyToken = token;
+  user.emailVerifyExp = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await user.save({ validateBeforeSave: false });
+  return token;
+};
+
+const sendVerificationEmail = async (user) => {
+  const token = await createEmailVerifyToken(user);
+  const frontendUrl = buildFrontendUrl();
+  const link = `${frontendUrl}/?auth=verify&token=${token}`;
+  const isDev = process.env.NODE_ENV !== "production";
+
+  await sendMail({
+    to: user.email,
+    subject: "Xác minh email",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+        <p>Chào ${user.name || "bạn"},</p>
+        <p>Cảm ơn bạn đã đăng ký. Nhấp vào nút bên dưới để xác minh email:</p>
+        <p>
+          <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Xác minh email</a>
+        </p>
+        <p>Nếu nút không bấm được, hãy mở liên kết này: <br/><a href="${link}">${link}</a></p>
+        <p>Liên kết có hiệu lực trong 24 giờ.</p>
+      </div>
+    `,
+  });
+
+  return { link, token, isDev };
+};
+
 export const register = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -63,6 +99,20 @@ export const register = async (req, res) => {
       role: ["user", "owner", "admin"].includes(role) ? role : "user",
     });
 
+    // Gửi email xác minh
+    let verifyLink;
+    let devVerifyToken;
+    try {
+      const { link, token: vToken, isDev } = await sendVerificationEmail(user);
+      if (isDev) {
+        verifyLink = link;
+        devVerifyToken = vToken;
+      }
+    } catch (mailErr) {
+      console.error("register sendVerificationEmail error:", mailErr);
+      // Không chặn đăng ký; chỉ ghi log
+    }
+
     return res.status(201).json({
       success: true,
       data: {
@@ -73,6 +123,8 @@ export const register = async (req, res) => {
           role: user.role,
         },
         token: signToken(user),
+        verifyLink,
+        devVerifyToken,
       },
     });
   } catch (e) {
@@ -180,6 +232,9 @@ export const changePassword = async (req, res) => {
 
 export const forgotPassword = async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ success: false, errors: errors.array() });
     const { email } = req.body || {};
     const user = await User.findOne({ email });
     if (user) {
@@ -187,12 +242,43 @@ export const forgotPassword = async (req, res) => {
       user.resetPasswordToken = token;
       user.resetPasswordExp = new Date(Date.now() + 60 * 60 * 1000);
       await user.save({ validateBeforeSave: false });
-      const link = `${process.env.FRONTEND_URL}/?auth=reset&token=${token}`;
+      const frontendUrl = process.env.FRONTEND_URL || "";
+      const link = `${frontendUrl}/?auth=reset&token=${token}`;
+      const isDev = process.env.NODE_ENV !== "production";
+
+      // Gửi email nếu có cấu hình SMTP
+      try {
+        await sendMail({
+          to: email,
+          subject: "Đặt lại mật khẩu",
+          html: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+              <p>Chào ${user.name || "bạn"},</p>
+              <p>Bạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
+              <p>Nhấp vào nút bên dưới để đặt lại mật khẩu:</p>
+              <p>
+                <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Đặt lại mật khẩu</a>
+              </p>
+              <p>Nếu nút không bấm được, hãy mở liên kết này: <br/><a href="${link}">${link}</a></p>
+              <p>Liên kết có hiệu lực trong 60 phút.</p>
+              <p>Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
+            </div>
+          `,
+        });
+      } catch (mailErr) {
+        console.error("forgotPassword sendMail error:", mailErr);
+        return res.status(500).json({
+          success: false,
+          message: "Không gửi được email đặt lại mật khẩu. Vui lòng thử lại.",
+        });
+      }
+
       return res.json({
         success: true,
         message:
           "Nếu email tồn tại, hệ thống đã gửi hướng dẫn đặt lại mật khẩu.",
-        link: process.env.NODE_ENV !== "production" ? link : undefined,
+        link: isDev ? link : undefined,
+        devToken: isDev ? token : undefined,
       });
     }
     return res.json({
@@ -207,11 +293,15 @@ export const forgotPassword = async (req, res) => {
 //reset pass
 export const resetPassword = async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ success: false, errors: errors.array() });
+
     const { token, password } = req.body || {};
     if (!token || !password) {
       return res
         .status(400)
-        .json({ success: false, message: "Thiết  token hoặc mật khẩu" });
+        .json({ success: false, message: "Thiếu token hoặc mật khẩu" });
     }
     const user = await User.findOne({
       resetPasswordToken: token,
@@ -229,6 +319,69 @@ export const resetPassword = async (req, res) => {
     return res.json({
       success: true,
       message: "Đặt lại mật khẩu thành công. Hãy đăng nhập.",
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ success: false, errors: errors.array() });
+
+    const { token } = req.body || {};
+    if (!token)
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu token xác minh" });
+
+    const user = await User.findOne({
+      emailVerifyToken: token,
+      emailVerifyExp: { $gt: new Date() },
+    });
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Token không hợp lệ hoặc đã hết hạn",
+      });
+    }
+
+    user.emailVerified = true;
+    user.emailVerifyToken = undefined;
+    user.emailVerifyExp = undefined;
+    await user.save();
+
+    return res.json({ success: true, message: "Đã xác minh email" });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const resendVerifyEmail = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy tài khoản" });
+
+    if (user.emailVerified) {
+      return res.json({ success: true, message: "Email đã được xác minh" });
+    }
+
+    if (req.body?.email) {
+      user.email = req.body.email;
+    }
+
+    const { link, token, isDev } = await sendVerificationEmail(user);
+
+    return res.json({
+      success: true,
+      message: "Đã gửi lại email xác minh",
+      link: isDev ? link : undefined,
+      devToken: isDev ? token : undefined,
     });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });

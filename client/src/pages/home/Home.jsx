@@ -40,10 +40,16 @@ const Home = () => {
   const [returnDate, setReturnDate] = useState("");
   const [returnTime, setReturnTime] = useState("");
 
-  const canSearch = useMemo(
-    () => !!(pickupDate && returnDate),
-    [pickupDate, returnDate]
-  );
+  const canSearch = useMemo(() => {
+    if (!pickupDate || !returnDate) return false;
+    const start = new Date(pickupDate);
+    const end = new Date(returnDate);
+    const valid =
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      end >= start;
+    return valid;
+  }, [pickupDate, returnDate]);
 
   const [featured, setFeatured] = useState([]);
   const [loadingFeatured, setLoadingFeatured] = useState(true);
@@ -250,6 +256,10 @@ const Home = () => {
   };
 
   const onSearch = () => {
+    if (!canSearch) {
+      alert("Ng\u00e0y tr\u1ea3 ph\u1ea3i sau ho\u1eb7c b\u1eb1ng ng\u00e0y nh\u1eadn.");
+      return;
+    }
     const qs = new URLSearchParams();
     if (pickupLocation) qs.set("city", pickupLocation);
     if (pickupDate) qs.set("pickup", pickupDate);

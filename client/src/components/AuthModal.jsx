@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import LoginForm from "./auth/Login";
 import RegisterForm from "./auth/Register";
 import ForgotPasswordForm from "./auth/ForgotPasswordForm";
+import ResetPasswordForm from "./auth/ResetPasswordForm";
 
 const AUTH_TABS = new Set(["login", "register", "forgot", "reset"]);
 
@@ -138,10 +139,11 @@ const AuthModal = () => {
           )}
 
           {tab === "reset" && (
-            <div className="text-sm text-gray-600">
-              Token reset: <span className="font-mono">{token || "—"}</span>
-              {/* TODO: render ResetPasswordForm ở đây */}
-            </div>
+            <ResetPasswordForm
+              token={token}
+              onSuccess={() => setTab("login")}
+              onBack={() => setTab("login")}
+            />
           )}
         </div>
       </div>

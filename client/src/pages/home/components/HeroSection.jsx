@@ -135,6 +135,7 @@ export const HeroSection = ({
                       type="date"
                       className="input text-sm"
                       value={returnDate}
+                      min={pickupDate || undefined}
                       onChange={(e) => setReturnDate(e.target.value)}
                     />
                   </div>

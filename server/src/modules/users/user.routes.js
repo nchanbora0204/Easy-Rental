@@ -10,6 +10,8 @@ import {
   resetPassword,
   verifyEmail,
   resendVerifyEmail,
+  refreshToken,
+  logout,
 } from "./user.controller.js";
 import { protect } from "../../middleware/auth.js";
 
@@ -50,5 +52,7 @@ router.post(
   body("email").optional().isEmail(),
   resendVerifyEmail
 );
+router.post("/refresh", refreshToken);
+router.post("/logout", logout);
 
 export default router;

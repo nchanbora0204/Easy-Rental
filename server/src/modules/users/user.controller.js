@@ -4,11 +4,16 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { sendMail } from "../../utils/mailer.js";
 import User from "./user.model.js";
+import RefreshToken from "./refreshToken.model.js";
+
+const ACCESS_TOKEN_EXPIRES_IN = "1h";
+const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 30);
+const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000;
+const REFRESH_COOKIE_NAME = "refreshToken";
 
 const sanitize = (u) => {
   if (!u) return null;
   const obj = u.toObject ? u.toObject() : u;
-
   const {
     _id,
     name,
@@ -35,13 +40,84 @@ const sanitize = (u) => {
   };
 };
 
-//jWT
+const hashToken = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
+const parseCookies = (cookieHeader = "") =>
+  Object.fromEntries(
+    cookieHeader
+      .split(";")
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .map((c) => c.split("="))
+      .map(([k, ...v]) => [k, v.join("=")])
+  );
+
+const getRefreshTokenFromRequest = (req) => {
+  if (req.body?.refreshToken) return req.body.refreshToken;
+  const cookies = parseCookies(req.headers.cookie || "");
+  return cookies[REFRESH_COOKIE_NAME];
+};
+
+const setRefreshCookie = (res, token) => {
+  res.cookie(REFRESH_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: REFRESH_TOKEN_TTL_MS,
+    path: "/",
+  });
+};
+
+const clearRefreshCookie = (res) => {
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  });
+};
+
 const signToken = (u) =>
   jwt.sign(
-    { id: u._id, role: u.role, name: u.name, email: u.email },
+    {
+      id: u._id,
+      role: u.role,
+      name: u.name,
+      email: u.email,
+      tokenVersion: u.tokenVersion || 0,
+    },
     process.env.JWT_SECRET,
-    { expiresIn: "30d" }
+    { expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
+
+const createRefreshToken = async (user, req) => {
+  const raw = crypto.randomBytes(64).toString("hex");
+  const tokenHash = hashToken(raw);
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+  await RefreshToken.create({
+    user: user._id,
+    tokenHash,
+    expiresAt,
+    userAgent: req.headers["user-agent"] || "",
+    ip: req.ip,
+  });
+  return raw;
+};
+
+const issueTokens = async (user, req, res) => {
+  const accessToken = signToken(user);
+  const refreshToken = await createRefreshToken(user, req);
+  setRefreshCookie(res, refreshToken);
+  return { accessToken, refreshToken };
+};
+
+const revokeUserRefreshTokens = async (userId) => {
+  await RefreshToken.updateMany(
+    { user: userId, revoked: false },
+    { revoked: true }
+  );
+};
 
 const buildFrontendUrl = () => process.env.FRONTEND_URL || "";
 
@@ -61,16 +137,16 @@ const sendVerificationEmail = async (user) => {
 
   await sendMail({
     to: user.email,
-    subject: "Xác minh email",
+    subject: "Xac minh email",
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
-        <p>Chào ${user.name || "bạn"},</p>
-        <p>Cảm ơn bạn đã đăng ký. Nhấp vào nút bên dưới để xác minh email:</p>
+        <p>Chao ${user.name || "ban"},</p>
+        <p>Cam on ban da dang ky. Nhan vao nut ben duoi de xac minh email:</p>
         <p>
-          <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Xác minh email</a>
+          <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Xac minh email</a>
         </p>
-        <p>Nếu nút không bấm được, hãy mở liên kết này: <br/><a href="${link}">${link}</a></p>
-        <p>Liên kết có hiệu lực trong 24 giờ.</p>
+        <p>Neu nut khong bam duoc, sao chep lien ket nay: <br/><a href="${link}">${link}</a></p>
+        <p>Lien ket hieu luc trong 24 gio.</p>
       </div>
     `,
   });
@@ -89,7 +165,7 @@ export const register = async (req, res) => {
     if (exists)
       return res
         .status(409)
-        .json({ success: false, message: "Email này đã được sử dụng" });
+        .json({ success: false, message: "Email da duoc su dung" });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
@@ -99,7 +175,6 @@ export const register = async (req, res) => {
       role: ["user", "owner", "admin"].includes(role) ? role : "user",
     });
 
-    // Gửi email xác minh
     let verifyLink;
     let devVerifyToken;
     try {
@@ -110,8 +185,9 @@ export const register = async (req, res) => {
       }
     } catch (mailErr) {
       console.error("register sendVerificationEmail error:", mailErr);
-      // Không chặn đăng ký; chỉ ghi log
     }
+
+    const tokens = await issueTokens(user, req, res);
 
     return res.status(201).json({
       success: true,
@@ -122,7 +198,7 @@ export const register = async (req, res) => {
           email: user.email,
           role: user.role,
         },
-        token: signToken(user),
+        token: tokens.accessToken,
         verifyLink,
         devVerifyToken,
       },
@@ -143,13 +219,15 @@ export const login = async (req, res) => {
     if (!user)
       return res
         .status(401)
-        .json({ success: false, message: "Sai email hoặc mật khẩu" });
+        .json({ success: false, message: "Sai email hoac mat khau" });
 
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok)
       return res
         .status(401)
-        .json({ success: false, message: "Sai email hoặc mật khẩu" });
+        .json({ success: false, message: "Sai email hoac mat khau" });
+
+    const tokens = await issueTokens(user, req, res);
 
     return res.json({
       success: true,
@@ -160,9 +238,67 @@ export const login = async (req, res) => {
           email: user.email,
           role: user.role,
         },
-        token: signToken(user),
+        token: tokens.accessToken,
       },
     });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const refreshToken = async (req, res) => {
+  try {
+    const raw = getRefreshTokenFromRequest(req);
+    if (!raw) {
+      clearRefreshCookie(res);
+      return res
+        .status(401)
+        .json({ success: false, message: "Missing refresh token" });
+    }
+
+    const tokenHash = hashToken(raw);
+    const saved = await RefreshToken.findOne({ tokenHash });
+    if (!saved || saved.revoked || saved.expiresAt < new Date()) {
+      clearRefreshCookie(res);
+      return res
+        .status(401)
+        .json({ success: false, message: "Refresh token khong hop le" });
+    }
+
+    const user = await User.findById(saved.user);
+    if (!user) {
+      clearRefreshCookie(res);
+      return res
+        .status(401)
+        .json({ success: false, message: "Tai khoan khong ton tai" });
+    }
+
+    const newRefresh = await createRefreshToken(user, req);
+    saved.revoked = true;
+    saved.replacedByTokenHash = hashToken(newRefresh);
+    await saved.save();
+
+    setRefreshCookie(res, newRefresh);
+    const accessToken = signToken(user);
+
+    return res.json({
+      success: true,
+      data: { token: accessToken },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const raw = getRefreshTokenFromRequest(req);
+    if (raw) {
+      const tokenHash = hashToken(raw);
+      await RefreshToken.updateOne({ tokenHash }, { revoked: true });
+    }
+    clearRefreshCookie(res);
+    return res.json({ success: true, message: "Da thoat" });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -179,7 +315,6 @@ export const me = async (req, res) => {
   }
 };
 
-//Profile
 export const updateMe = async (req, res) => {
   try {
     const { name, phone, city, avatar } = req.body;
@@ -198,7 +333,7 @@ export const updateMe = async (req, res) => {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
-//update password
+
 export const changePassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
@@ -211,24 +346,28 @@ export const changePassword = async (req, res) => {
     if (!user)
       return res
         .status(404)
-        .json({ success: false, message: "Không tìm thấy tài khoản" });
+        .json({ success: false, message: "Khong tim thay tai khoan" });
 
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!ok)
       return res
         .status(400)
-        .json({ success: false, message: "Mật khẩu cũ không đúng" });
+        .json({ success: false, message: "Mat khau cu khong dung" });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
+    await revokeUserRefreshTokens(user._id);
+    clearRefreshCookie(res);
 
-    return res.json({ success: true, message: "Mật khẩu đã được cập nhật" });
+    return res.json({
+      success: true,
+      message: "Mat khau da duoc cap nhat. Vui long dang nhap lai.",
+    });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
-
-//quen mk
 
 export const forgotPassword = async (req, res) => {
   try {
@@ -246,22 +385,21 @@ export const forgotPassword = async (req, res) => {
       const link = `${frontendUrl}/?auth=reset&token=${token}`;
       const isDev = process.env.NODE_ENV !== "production";
 
-      // Gửi email nếu có cấu hình SMTP
       try {
         await sendMail({
           to: email,
-          subject: "Đặt lại mật khẩu",
+          subject: "Reset mat khau",
           html: `
             <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
-              <p>Chào ${user.name || "bạn"},</p>
-              <p>Bạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
-              <p>Nhấp vào nút bên dưới để đặt lại mật khẩu:</p>
+              <p>Chao ${user.name || "ban"},</p>
+              <p>Ban (hoac ai do) vua yeu cau reset mat khau.</p>
+              <p>Nhan vao nut ben duoi de dat lai mat khau:</p>
               <p>
-                <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Đặt lại mật khẩu</a>
+                <a href="${link}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Dat lai mat khau</a>
               </p>
-              <p>Nếu nút không bấm được, hãy mở liên kết này: <br/><a href="${link}">${link}</a></p>
-              <p>Liên kết có hiệu lực trong 60 phút.</p>
-              <p>Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
+              <p>Neu nut khong bam duoc, sao chep lien ket nay: <br/><a href="${link}">${link}</a></p>
+              <p>Lien ket hieu luc trong 60 phut.</p>
+              <p>Neu khong phai ban yeu cau, bo qua email nay.</p>
             </div>
           `,
         });
@@ -269,28 +407,27 @@ export const forgotPassword = async (req, res) => {
         console.error("forgotPassword sendMail error:", mailErr);
         return res.status(500).json({
           success: false,
-          message: "Không gửi được email đặt lại mật khẩu. Vui lòng thử lại.",
+          message: "Khong gui duoc email reset mat khau. Vui long thu lai.",
         });
       }
 
       return res.json({
         success: true,
         message:
-          "Nếu email tồn tại, hệ thống đã gửi hướng dẫn đặt lại mật khẩu.",
+          "Neu email ton tai, chung toi da gui huong dan reset mat khau.",
         link: isDev ? link : undefined,
         devToken: isDev ? token : undefined,
       });
     }
     return res.json({
       success: true,
-      message: "Nếu email tồn tại, hệ thống đã gửi hướng dẫn đặt lại mật khẩu.",
+      message: "Neu email ton tai, chung toi da gui huong dan reset mat khau.",
     });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
 
-//reset pass
 export const resetPassword = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -301,7 +438,7 @@ export const resetPassword = async (req, res) => {
     if (!token || !password) {
       return res
         .status(400)
-        .json({ success: false, message: "Thiếu token hoặc mật khẩu" });
+        .json({ success: false, message: "Thieu token hoac mat khau" });
     }
     const user = await User.findOne({
       resetPasswordToken: token,
@@ -310,15 +447,18 @@ export const resetPassword = async (req, res) => {
     if (!user) {
       return res
         .status(400)
-        .json({ success: false, message: "Token không hợp lệ" });
+        .json({ success: false, message: "Token khong hop le" });
     }
     user.passwordHash = await bcrypt.hash(password, 10);
     user.resetPasswordToken = undefined;
     user.resetPasswordExp = undefined;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
+    await revokeUserRefreshTokens(user._id);
+    clearRefreshCookie(res);
     return res.json({
       success: true,
-      message: "Đặt lại mật khẩu thành công. Hãy đăng nhập.",
+      message: "Doi mat khau thanh cong. Vui long dang nhap.",
     });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -335,7 +475,7 @@ export const verifyEmail = async (req, res) => {
     if (!token)
       return res
         .status(400)
-        .json({ success: false, message: "Thiếu token xác minh" });
+        .json({ success: false, message: "Thieu token xac minh" });
 
     const user = await User.findOne({
       emailVerifyToken: token,
@@ -344,7 +484,7 @@ export const verifyEmail = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "Token không hợp lệ hoặc đã hết hạn",
+        message: "Token khong hop le hoac da het han",
       });
     }
 
@@ -353,7 +493,7 @@ export const verifyEmail = async (req, res) => {
     user.emailVerifyExp = undefined;
     await user.save();
 
-    return res.json({ success: true, message: "Đã xác minh email" });
+    return res.json({ success: true, message: "Da xac minh email" });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
   }
@@ -365,10 +505,10 @@ export const resendVerifyEmail = async (req, res) => {
     if (!user)
       return res
         .status(404)
-        .json({ success: false, message: "Không tìm thấy tài khoản" });
+        .json({ success: false, message: "Khong tim thay tai khoan" });
 
     if (user.emailVerified) {
-      return res.json({ success: true, message: "Email đã được xác minh" });
+      return res.json({ success: true, message: "Email da duoc xac minh" });
     }
 
     if (req.body?.email) {
@@ -379,7 +519,7 @@ export const resendVerifyEmail = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Đã gửi lại email xác minh",
+      message: "Da gui lai email xac minh",
       link: isDev ? link : undefined,
       devToken: isDev ? token : undefined,
     });
